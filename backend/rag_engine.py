@@ -13,6 +13,7 @@ llm = ChatGroq(
     temperature=0.7,
     groq_api_key=os.getenv("GROQ_API_KEY")  # Optional: it will auto-load from env
 )
+embeddings=HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
 def document_loader(file_path):
     """
     if it is in .txt then we will call Textloader 
@@ -28,20 +29,16 @@ def document_loader(file_path):
     documents=loader.load()        
     return documents
 
+def ingest_document(documents, is_audio=False):
+    if not is_audio:
+        splitter = RecursiveCharacterTextSplitter(chunk_size=2000, chunk_overlap=20)
+        docs = splitter.split_documents(documents)
+    else:
+        docs = documents  # 🔥 skip splitting for audio
 
-def ingest_document(documents):
-    # if metadatas is None:
-    #     if metadatas is None:
-    #         metadatas = [{} for _ in documents]
-    splitter=RecursiveCharacterTextSplitter(chunk_size=2000,chunk_overlap=20)
-# text=[doc_1,doc_2,doc_3]
-    # metadatas=[{"source":"internal_notes","doc_id":1},{"source":"internal_notes","doc_id":2},{"source":"internal_notes","doc_id":3}]
-    docs=splitter.split_documents(documents)
-    
     for i in range(len(docs)):
-        docs[i].metadata["chunk_id"]=i       
+        docs[i].metadata["chunk_id"] = i       
 
-    embeddings=HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
     vector_store = FAISS.from_documents(docs, embeddings)
     return vector_store
 

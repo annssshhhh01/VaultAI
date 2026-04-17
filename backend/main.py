@@ -8,8 +8,9 @@ app=FastAPI()
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 import whisper
-
+from langchain_core.documents import Document
 app = FastAPI()
+vector_store = None
 
 app.add_middleware(
     CORSMiddleware,
@@ -62,6 +63,8 @@ async def ask_question(request:Question):
     return result   
 
 
+model = whisper.load_model("base")  # load once (important)
+
 @app.post("/upload/audio")
 async def transcribe_audio(file: UploadFile = File(...)):
     file_path = f"uploads/{file.filename}"
@@ -69,7 +72,32 @@ async def transcribe_audio(file: UploadFile = File(...)):
     with open(file_path, "wb") as f:
         f.write(await file.read())
 
-    model = whisper.load_model("base")
     result = model.transcribe(file_path)
+    segments = result["segments"]
 
-    return result["segments"]
+    # STEP 1: chunks
+    chunks = []
+    for s in segments:
+        chunks.append({
+            "text": s["text"],
+            "timestamp": s["start"]
+        })
+
+    # STEP 2: convert to docs
+    docs = []
+
+    for c in chunks:
+        docs.append(
+            Document(
+                page_content=c["text"],
+                metadata={
+                    "timestamp": c["timestamp"],
+                    "source": file.filename
+                }
+            )
+        )
+
+    # 🔥 THIS IS THE KEY LINE
+    global vector_store
+    vector_store = ingest_document(docs, is_audio=True)
+    return {"message": "Audio processed successfully"}
