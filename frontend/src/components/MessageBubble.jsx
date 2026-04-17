@@ -5,8 +5,12 @@ import { useState, useEffect } from "react";
  */
 function formatTimestamp(seconds) {
   if (seconds === null || seconds === undefined) return "";
-  const m = Math.floor(seconds / 60).toString().padStart(2, "0");
-  const s = Math.floor(seconds % 60).toString().padStart(2, "0");
+  const m = Math.floor(seconds / 60)
+    .toString()
+    .padStart(2, "0");
+  const s = Math.floor(seconds % 60)
+    .toString()
+    .padStart(2, "0");
   return `${m}:${s}`;
 }
 
@@ -16,7 +20,9 @@ export default function MessageBubble({ message, onPlayTimestamp }) {
   const isSystem = role === "system";
 
   // Typewriter streaming state for AI messages
-  const [displayedText, setDisplayedText] = useState(isUser || isSystem ? text : "");
+  const [displayedText, setDisplayedText] = useState(
+    isUser || isSystem ? text : ""
+  );
   const [isTyping, setIsTyping] = useState(!isUser && !isSystem);
 
   useEffect(() => {
@@ -26,12 +32,10 @@ export default function MessageBubble({ message, onPlayTimestamp }) {
       return;
     }
 
-    // Streaming simulation
     let i = 0;
     setIsTyping(true);
     setDisplayedText("");
-    
-    // Quick interval for fast streaming
+
     const intervalId = setInterval(() => {
       setDisplayedText(text.slice(0, i));
       i++;
@@ -39,70 +43,102 @@ export default function MessageBubble({ message, onPlayTimestamp }) {
         clearInterval(intervalId);
         setIsTyping(false);
       }
-    }, 10); // 10ms per character = extremely fast streaming
+    }, 8);
 
     return () => clearInterval(intervalId);
   }, [text, isUser, isSystem]);
 
+  // ── System Message ──
   if (isSystem) {
     return (
       <div className="system-message">
-        <span className="system-message__icon">✨</span> {text}
+        <div className="system-message__inner">
+          <span className="system-message__icon">✦</span>
+          {text}
+        </div>
       </div>
     );
   }
 
+  // ── User / AI Message ──
   return (
-    <div className={`message-row ${isUser ? "message-row--user" : "message-row--ai"}`}>
-      {!isUser && (
-        <div className="message-avatar message-avatar--ai">
-           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <path d="M12 2L14.4 9.6L22 12L14.4 14.4L12 22L9.6 14.4L2 12L9.6 9.6L12 2Z" fill="url(#sparkle-gradient)"/>
-            <defs>
-              <linearGradient id="sparkle-gradient" x1="2" y1="2" x2="22" y2="22" gradientUnits="userSpaceOnUse">
-                <stop stopColor="#A78BFA" />
-                <stop offset="1" stopColor="#60A5FA" />
-              </linearGradient>
-            </defs>
-          </svg>
-        </div>
-      )}
-
-      <div className={`message-bubble ${isUser ? "message-bubble--user" : "message-bubble--ai"} ${isSummary ? "message-bubble--summary" : ""}`}>
-        {isSummary && (
-          <div className="message-summary-badge">
-            <span className="sparkle-icon">✦</span> Summary generated
-          </div>
-        )}
-
-        <div className="message-text">
-          {displayedText}
-          {isTyping && <span className="typing-cursor"></span>}
-        </div>
-
-        {/* Timestamp + Play */}
-        {!isUser && timestamp !== undefined && timestamp !== null && !isTyping && (
-          <div className="message-actions">
-            <button
-              className="action-btn action-btn--play"
-              onClick={() => onPlayTimestamp(timestamp)}
-              title={`Jump to ${formatTimestamp(timestamp)}`}
+    <div
+      className={`message-row ${
+        isUser ? "message-row--user" : "message-row--ai"
+      } ${isSummary ? "message-bubble--summary" : ""}`}
+    >
+      <div className="message-inner">
+        {/* Avatar */}
+        <div
+          className={`message-avatar ${
+            isUser ? "message-avatar--user" : "message-avatar--ai"
+          }`}
+        >
+          {isUser ? (
+            "U"
+          ) : (
+            <svg
+              width="16"
+              height="16"
+              viewBox="0 0 24 24"
+              fill="none"
+              xmlns="http://www.w3.org/2000/svg"
             >
-              ▶ Play Audio ({formatTimestamp(timestamp)})
-            </button>
-          </div>
-        )}
+              <path
+                d="M12 2L14.4 9.6L22 12L14.4 14.4L12 22L9.6 14.4L2 12L9.6 9.6L12 2Z"
+                fill="#fff"
+              />
+            </svg>
+          )}
+        </div>
 
-        {/* Sources */}
-        {!isUser && sources && sources.length > 0 && !isTyping && (
-          <div className="message-sources">
-            {sources.map((src, i) => (
-              <span key={i} className="source-tag">
-                {typeof src === "string" ? src : src.source || src.page || "Doc"}
-              </span>
-            ))}
+        {/* Body */}
+        <div className="message-body">
+          <p className={`message-role ${!isUser ? "message-role--ai" : ""}`}>
+            {isUser ? "You" : "RAG Nova"}
+          </p>
+
+          {isSummary && (
+            <div className="message-summary-badge">
+              <span className="sparkle-icon">✦</span> Summary
+            </div>
+          )}
+
+          <div className="message-text">
+            {displayedText}
+            {isTyping && <span className="typing-cursor"></span>}
           </div>
-        )}
+
+          {/* Timestamp + Play Button */}
+          {!isUser &&
+            timestamp !== undefined &&
+            timestamp !== null &&
+            !isTyping && (
+              <div className="message-actions">
+                <button
+                  className="action-btn action-btn--play"
+                  onClick={() => onPlayTimestamp?.(timestamp)}
+                  title={`Jump to ${formatTimestamp(timestamp)}`}
+                >
+                  <span className="action-btn__icon">▶</span>
+                  Play at {formatTimestamp(timestamp)}
+                </button>
+              </div>
+            )}
+
+          {/* Sources */}
+          {!isUser && sources && sources.length > 0 && !isTyping && (
+            <div className="message-sources">
+              {sources.map((src, i) => (
+                <span key={i} className="source-tag">
+                  {typeof src === "string"
+                    ? src
+                    : src.source || src.page || "Doc"}
+                </span>
+              ))}
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );

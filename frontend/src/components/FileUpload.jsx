@@ -4,10 +4,10 @@ import { uploadFile, getFileType } from "../services/api";
 const ACCEPT = ".pdf,.mp3,.wav,.mp4,.m4a,.ogg,.webm";
 
 const FILE_TYPE_META = {
-  pdf: { icon: "📄", label: "PDF Document", color: "text-red-400" },
-  audio: { icon: "🎵", label: "Audio File", color: "text-purple-400" },
-  video: { icon: "🎬", label: "Video File", color: "text-blue-400" },
-  unknown: { icon: "📁", label: "File", color: "text-gray-400" },
+  pdf:     { icon: "📄", label: "PDF Document" },
+  audio:   { icon: "🎵", label: "Audio File" },
+  video:   { icon: "🎬", label: "Video File" },
+  unknown: { icon: "📁", label: "File" },
 };
 
 export default function FileUpload({ onUploadSuccess }) {
@@ -45,7 +45,12 @@ export default function FileUpload({ onUploadSuccess }) {
     try {
       const result = await uploadFile(file, setProgress);
       setStatus("success");
-      onUploadSuccess({ file, fileType, url: URL.createObjectURL(file) });
+      onUploadSuccess({
+        file,
+        fileType,
+        url: URL.createObjectURL(file),
+        summary: result?.data?.summary || null,
+      });
     } catch (err) {
       setStatus("error");
       setErrorMsg(err.message);
@@ -64,8 +69,13 @@ export default function FileUpload({ onUploadSuccess }) {
     <div className="file-upload-card">
       {/* Drop Zone */}
       <div
-        className={`drop-zone ${isDragging ? "drop-zone--active" : ""} ${file ? "drop-zone--has-file" : ""}`}
-        onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
+        className={`drop-zone ${isDragging ? "drop-zone--active" : ""} ${
+          file ? "drop-zone--has-file" : ""
+        }`}
+        onDragOver={(e) => {
+          e.preventDefault();
+          setIsDragging(true);
+        }}
         onDragLeave={() => setIsDragging(false)}
         onDrop={handleDrop}
         onClick={() => !file && inputRef.current?.click()}
@@ -80,14 +90,20 @@ export default function FileUpload({ onUploadSuccess }) {
 
         {!file ? (
           <div className="drop-zone__empty">
-            <div className="drop-zone__icon">⬆️</div>
+            <div className="drop-zone__icon">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4" />
+                <polyline points="17 8 12 3 7 8" />
+                <line x1="12" y1="3" x2="12" y2="15" />
+              </svg>
+            </div>
             <p className="drop-zone__title">Drop your file here</p>
             <p className="drop-zone__sub">or click to browse</p>
-            <p className="drop-zone__types">PDF · MP3 · WAV · MP4</p>
+            <p className="drop-zone__types">PDF · MP3 · WAV · MP4 · WebM</p>
           </div>
         ) : (
           <div className="drop-zone__file">
-            <span className={`drop-zone__file-icon ${meta.color}`}>{meta.icon}</span>
+            <span className="drop-zone__file-icon">{meta.icon}</span>
             <div className="drop-zone__file-info">
               <p className="drop-zone__file-name">{file.name}</p>
               <p className="drop-zone__file-meta">
@@ -95,7 +111,14 @@ export default function FileUpload({ onUploadSuccess }) {
               </p>
             </div>
             {status !== "uploading" && (
-              <button className="drop-zone__clear-btn" onClick={(e) => { e.stopPropagation(); handleReset(); }}>
+              <button
+                className="drop-zone__clear-btn"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleReset();
+                }}
+                aria-label="Remove file"
+              >
                 ✕
               </button>
             )}
@@ -107,22 +130,23 @@ export default function FileUpload({ onUploadSuccess }) {
       {status === "uploading" && (
         <div className="upload-progress">
           <div className="upload-progress__bar">
-            <div className="upload-progress__fill" style={{ width: `${progress}%` }} />
+            <div
+              className="upload-progress__fill"
+              style={{ width: `${progress}%` }}
+            />
           </div>
-          <p className="upload-progress__label">{progress}% uploaded…</p>
+          <p className="upload-progress__label">{progress}%</p>
         </div>
       )}
 
       {/* Success / Error Banner */}
       {status === "success" && (
         <div className="upload-banner upload-banner--success">
-          ✅ File uploaded successfully! You can now ask questions about it.
+          ✓ File processed successfully. Ask questions about it now.
         </div>
       )}
       {status === "error" && (
-        <div className="upload-banner upload-banner--error">
-          ❌ {errorMsg}
-        </div>
+        <div className="upload-banner upload-banner--error">✕ {errorMsg}</div>
       )}
 
       {/* Action Buttons */}
@@ -132,11 +156,15 @@ export default function FileUpload({ onUploadSuccess }) {
           onClick={handleUpload}
           disabled={!file || status === "uploading" || status === "success"}
         >
-          {status === "uploading" ? "Uploading…" : status === "success" ? "Uploaded ✓" : "Upload File"}
+          {status === "uploading"
+            ? "Processing…"
+            : status === "success"
+            ? "Uploaded ✓"
+            : "Upload & Process"}
         </button>
         {status === "success" && (
           <button className="btn btn--reset" onClick={handleReset}>
-            Upload another
+            New File
           </button>
         )}
       </div>

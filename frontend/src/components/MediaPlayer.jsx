@@ -1,20 +1,9 @@
 import { useRef, useEffect } from "react";
 
-/**
- * Formats seconds → MM:SS
- */
-function formatTime(seconds) {
-  if (!seconds && seconds !== 0) return "00:00";
-  const m = Math.floor(seconds / 60).toString().padStart(2, "0");
-  const s = Math.floor(seconds % 60).toString().padStart(2, "0");
-  return `${m}:${s}`;
-}
-
 export default function MediaPlayer({ mediaFile, seekTo, onSeekConsumed }) {
   const playerRef = useRef(null);
 
-  // When seekTo changes (e.g. user clicks "Play" on a timestamp),
-  // jump the player to that time and play.
+  // When seekTo changes, jump the player to that time and play
   useEffect(() => {
     if (seekTo !== null && playerRef.current) {
       playerRef.current.currentTime = seekTo;
@@ -36,7 +25,9 @@ export default function MediaPlayer({ mediaFile, seekTo, onSeekConsumed }) {
         <span className="media-player__icon">{isAudio ? "🎵" : "🎬"}</span>
         <div>
           <p className="media-player__title">{mediaFile.name}</p>
-          <p className="media-player__subtitle">{isAudio ? "Audio Player" : "Video Player"} · Click timestamps in chat to seek</p>
+          <p className="media-player__subtitle">
+            Click timestamps in chat to seek
+          </p>
         </div>
       </div>
 
