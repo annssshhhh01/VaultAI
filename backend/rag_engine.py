@@ -62,6 +62,25 @@ def retrieve_content(vector_store,query):
 
     concatinated_content="\n\n".join(content)
     return concatinated_content,extradata 
+def summarize_call(vector_store):
+    docs = vector_store.similarity_search("", k=5)
+
+    content = "\n\n".join([doc.page_content for doc in docs])
+
+    prompt = f"""
+You are a helpful assistant.
+
+Summarize the following content clearly and concisely.
+
+CONTENT:
+{content}
+"""
+
+    result = llm.invoke(prompt)
+
+    return {
+        "answer": result.content
+    }
 
 def llm_call(vector_store,question):
     concatinated_content,extradata=retrieve_content(vector_store,question)

@@ -2,15 +2,26 @@ from fastapi import FastAPI,UploadFile,File,HTTPException
 from pydantic import BaseModel,Field
 import shutil # it is mainly use to copy remove 
 import os # its an operating system use to do various work
-from rag_engine import document_loader,ingest_document,llm_call
+from rag_engine import document_loader,ingest_document,llm_call,summarize_call
 from fastapi.middleware.cors import CORSMiddleware
-app=FastAPI()
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 import whisper
 import subprocess
 from langchain_core.documents import Document
-model = whisper.load_model("base")
+app = FastAPI()
+vector_store = None
+import psycopg2
+
+conn = psycopg2.connect(
+    dbname=os.getenv("DB_NAME"),
+    user=os.getenv("DB_USER"),
+    password=os.getenv("DB_PASSWORD"),
+    host=os.getenv("DB_HOST"),
+    port=os.getenv("DB_PORT")
+)
+
+cursor = conn.cursor()
 
 app.add_middleware(
     CORSMiddleware,
@@ -47,11 +58,36 @@ async def upload_file(file:UploadFile=File(...)):
         shutil.copyfileobj(file.file,f)
     try:
        document=document_loader(file_path)
+       for doc in document:
+        cursor.execute(
+            "INSERT INTO documents (text, timestamp, source, type) VALUES (%s, %s, %s, %s)",
+            (doc.page_content, None, file.filename, "pdf")
+        )
+
+        conn.commit()
        vector_store= ingest_document(document)    
        return {"message":f"file {file.filename} is uploaded and vectorized"}
     except Exception as e:
         raise HTTPException(status_code=500,detail=str(e))
     
+@app.post("/ask")
+async def ask_question(request: Question):
+    global vector_store
+
+    if vector_store is None:
+        raise HTTPException(status_code=400, detail="Please Upload a Document first.")
+
+    # 🔥 Detect summarization
+    if "summarize" in request.question.lower():
+        result = summarize_call(vector_store)
+    else:
+        result = llm_call(vector_store, request.question)
+
+    return result 
+
+
+model = whisper.load_model("base")  # load once (important)
+
 @app.post("/upload/media")
 async def upload_media(file: UploadFile = File(...)):
 
@@ -86,6 +122,10 @@ async def upload_media(file: UploadFile = File(...)):
 
     docs = []
     for s in segments:
+        cursor.execute(
+        "INSERT INTO documents (text, timestamp, source, type) VALUES (%s, %s, %s, %s)",
+        (s["text"], s["start"], file.filename, "audio")
+    )
         docs.append(
             Document(
                 page_content=s["text"],
@@ -95,6 +135,9 @@ async def upload_media(file: UploadFile = File(...)):
                 }
             )
         )
+    conn.commit()
+    
+
 
     global vector_store
     vector_store = ingest_document(docs, is_audio=True)
