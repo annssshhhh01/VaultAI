@@ -7,6 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 app=FastAPI()
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+import whisper
 
 app = FastAPI()
 
@@ -59,3 +60,16 @@ async def ask_question(request:Question):
        raise HTTPException(status_code=400,detail="Please Upload a Document first.")
     result=llm_call(vector_store,request.question) 
     return result   
+
+
+@app.post("/upload/audio")
+async def transcribe_audio(file: UploadFile = File(...)):
+    file_path = f"uploads/{file.filename}"
+
+    with open(file_path, "wb") as f:
+        f.write(await file.read())
+
+    model = whisper.load_model("base")
+    result = model.transcribe(file_path)
+
+    return result["segments"]
