@@ -1,242 +1,192 @@
-import { useState ,useRef, useEffect } from "react";
+import { useState, useRef, useEffect } from "react";
+import FileUpload from "./components/FileUpload";
+import MediaPlayer from "./components/MediaPlayer";
+import MessageBubble from "./components/MessageBubble";
+import { askQuestion } from "./services/api";
 
+export default function App() {
+  const [messages, setMessages] = useState([]);
+  const [question, setQuestion] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [mediaInfo, setMediaInfo] = useState(null);
+  const [seekTo, setSeekTo] = useState(null);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
 
-
-function App(){
-
-  const[question,setQuestion]=useState("")
-  const[loading,setLoading]=useState(false)
-  const[messages,setMessages]=useState([])
-  const[file,setFile]=useState(null)
   const messagesEndRef = useRef(null);
-  const fileInputRef = useRef(null);
+  const inputRef = useRef(null);
 
-   const API_URL = import.meta.env.VITE_API_URL || "http://localhost:8000";
-
-    const scrollToBottom = () => {
+  // Auto-scroll
+  useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  };
+  }, [messages, loading]);
 
-  const handleKeyPress = (e) => {
-  if (e.key === "Enter" && !e.shiftKey && !loading) {
-    e.preventDefault();
-    sendMessage();
+  function handleUploadSuccess(info) {
+    setMediaInfo(info);
+    setMessages((prev) => [
+      ...prev,
+      {
+        role: "system",
+        text: `"${info.file.name}" ready. Ask me anything about it.`,
+      },
+    ]);
   }
-};
 
-useEffect(() => {
-  scrollToBottom();
-}, [messages]);
+  async function handleSend() {
+    const q = question.trim();
+    if (!q || loading) return;
 
- //for uploading the file and sending it to user
-  async function uploadDocument(){
-    if(!file)
-      alert("Please select a file");
+    setQuestion("");
+    // Re-focus immediately for better UX
+    setTimeout(() => inputRef.current?.focus(), 0);
+
+    setMessages((prev) => [...prev, { role: "user", text: q }]);
     setLoading(true);
-   const filedata=new FormData();
-    filedata.append("file",file)    // formData is a class use to store complex data like file images and so in formData syntax is formData.append(name,value)
 
-    await fetch(`${API_URL}/upload`,{
-      method:"POST",
-      body:filedata,
-    })
-    setLoading(false);
-    alert("Document Uploaded Successfully")
-  }
+    try {
+      const data = await askQuestion(q);
+      const isSummary = q.toLowerCase().includes("summarize") || q.toLowerCase().includes("summary");
 
-  //asking the question
-  async function sendMessage() {
-    if(!question.trim()) return;
-
-setLoading(true)
-setMessages((prev)=>[...prev,{role:"user",text:question}]) // we can write setMessages(...Messages,{role:"user":text:question}) as well
-
-const res= await fetch(`${API_URL}/ask`,{
-  method:"POST",
-  headers:{
-    "Content-Type":"application/json",
-  },
-  body:JSON.stringify({question})
-})
- if (!res.ok) {
-      const errorData = await res.json();
-      throw new Error(errorData.detail || "API error");
+      setMessages((prev) => [
+        ...prev,
+        {
+          role: "assistant",
+          text: data.answer,
+          timestamp: data.timestamp ?? null,
+          sources: data.sources ?? [],
+          isSummary,
+        },
+      ]);
+    } catch (err) {
+      setMessages((prev) => [
+        ...prev,
+        {
+          role: "system",
+          text: `Error: ${err.message}`,
+        },
+      ]);
+    } finally {
+      setLoading(false);
     }
-const data= await res.json()
-setMessages((prev)=>[...prev,{role:"assistant",text:data.answer}])
-setLoading(false)
-setQuestion("")
   }
 
+  function handleKey(e) {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      handleSend();
+    }
+  }
 
-return (
-  <>
-    <style>{`
-      @keyframes float {
-        0%, 100% { transform: translateY(0px); }
-        50% { transform: translateY(-20px); }
-      }
-    `}</style>
-    
-    <div className="min-h-screen bg-zinc-950 flex items-center justify-center p-4 relative overflow-hidden">
-      
-      {/* Animated Background Elements */}
-      <div className="absolute inset-0 overflow-hidden pointer-events-none">
-        <div className="absolute top-1/4 -left-20 w-96 h-96 bg-purple-500/20 rounded-full blur-3xl animate-pulse"></div>
-        <div className="absolute bottom-1/4 -right-20 w-96 h-96 bg-blue-500/20 rounded-full blur-3xl animate-pulse" style={{ animationDelay: '1s' }}></div>
-        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-64 h-64 bg-pink-500/10 rounded-full blur-3xl animate-pulse" style={{ animationDelay: '2s' }}></div>
-      </div>
+  const hasMedia = mediaInfo && (mediaInfo.fileType === "audio" || mediaInfo.fileType === "video");
 
-      {/* Floating Particles */}
-      <div className="absolute inset-0 overflow-hidden pointer-events-none">
-        {[...Array(20)].map((_, i) => (
-          <div
-            key={i}
-            className="absolute w-1 h-1 bg-white/30 rounded-full"
-            style={{
-              left: `${Math.random() * 100}%`,
-              top: `${Math.random() * 100}%`,
-              animation: `float ${5 + Math.random() * 10}s ease-in-out infinite`,
-              animationDelay: `${Math.random() * 5}s`,
-            }}
-          ></div>
-        ))}
-      </div>
+  return (
+    <div className="app">
+      {/* ── Sidebar ── */}
+      <aside className={`sidebar ${sidebarOpen ? "open" : ""}`}>
+        <div className="sidebar__header">
+          <div className="sidebar__logo">
+            <svg width="28" height="28" viewBox="0 0 24 24" fill="none">
+              <path d="M12 2L14.4 9.6L22 12L14.4 14.4L12 22L9.6 14.4L2 12L9.6 9.6L12 2Z" fill="url(#logo-grad)"/>
+              <defs>
+                <linearGradient id="logo-grad" x1="2" y1="2" x2="22" y2="22">
+                  <stop stopColor="#A78BFA" />
+                  <stop offset="1" stopColor="#38bdf8" />
+                </linearGradient>
+              </defs>
+            </svg>
+            <span className="sidebar__logo-text">RAG Nova</span>
+          </div>
+          <button className="sidebar-toggle" onClick={() => setSidebarOpen(false)}>✕</button>
+        </div>
 
-      {/* Main Container - CHANGED: Made wider and taller */}
-      <div className="flex flex-col w-full h-screen">
-        
-        {/* Header */}
-        <div className="border-b border-zinc-800 px-8 py-4">
-  <h1 className="text-2xl font-semibold text-gray-100">
-    RAG Intelligence
-  </h1>
-  <p className="text-sm text-gray-400">
-    Upload documents and chat with AI
-  </p>
-</div>
+        <div className="sidebar__section">
+          <p className="sidebar__section-label">Source Document</p>
+          <FileUpload onUploadSuccess={handleUploadSuccess} />
+        </div>
 
-        {/* Upload Section */}
-        <div className="bg-white/5 backdrop-blur-xl border border-white/10 rounded-2xl p-6 mb-4 shadow-2xl">
-          <div className="flex items-center gap-4">
-            <div className="flex-1 relative">
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept=".pdf,.txt"
-                onChange={(e) => setFile(e.target.files[0])}
-                className="w-full text-sm text-gray-300 file:mr-4 file:py-3 file:px-6 file:rounded-xl file:border-0 file:bg-gradient-to-r file:from-purple-500 file:to-pink-500 file:text-white file:font-semibold file:cursor-pointer hover:file:from-purple-600 hover:file:to-pink-600 file:transition-all cursor-pointer bg-white/5 rounded-xl p-3 border border-white/10"
-              />
-              {file && (
-                <div className="mt-2 text-xs text-cyan-400">
-                  📄 {file.name}
-                </div>
-              )}
+        {hasMedia && (
+          <div className="sidebar__section">
+            <p className="sidebar__section-label">Media Player</p>
+            <MediaPlayer
+              mediaFile={{ ...mediaInfo.file, url: mediaInfo.url, name: mediaInfo.file.name, type: mediaInfo.file.type }}
+              seekTo={seekTo}
+              onSeekConsumed={() => setSeekTo(null)}
+            />
+          </div>
+        )}
+      </aside>
+
+      {/* ── Main Chat Area ── */}
+      <main className="main">
+        <header className="topbar">
+          <button className="sidebar-toggle" onClick={() => setSidebarOpen(true)}>☰</button>
+          <div className="topbar__title">
+            <h1>Intelligence Engine</h1>
+          </div>
+          <button className="topbar__clear-btn" onClick={() => setMessages([])} title="Clear Chat">
+            New Chat
+          </button>
+        </header>
+
+        <div className="chat-area">
+          {messages.length === 0 && (
+            <div className="chat-empty">
+              <h2 className="chat-empty__title">How can I help you today?</h2>
+              <p className="chat-empty__sub">Upload a document to the workspace, then ask questions or request a summary.</p>
+              <div className="chat-empty__tips">
+                <span>✦ Summarize this document</span>
+                <span>✦ What are the key points?</span>
+              </div>
             </div>
+          )}
+
+          {messages.map((msg, i) => (
+            <MessageBubble
+              key={i}
+              message={msg}
+              onPlayTimestamp={hasMedia ? setSeekTo : null}
+            />
+          ))}
+
+          {loading && (
+            <div className="message-row message-row--ai">
+               <div className="message-avatar message-avatar--ai">
+                 <div className="loading-indicator">
+                    <span className="loading-indicator__circle"></span>
+                    <span className="loading-indicator__circle"></span>
+                    <span className="loading-indicator__circle"></span>
+                 </div>
+               </div>
+            </div>
+          )}
+          
+          <div ref={messagesEndRef} />
+        </div>
+
+        {/* ── Gemini/ChatGPT Style Input ── */}
+        <div className="input-container">
+          <div className="input-box">
+            <textarea
+              ref={inputRef}
+              placeholder="Ask anything about the document..."
+              value={question}
+              onChange={(e) => setQuestion(e.target.value)}
+              onKeyDown={handleKey}
+              rows={1}
+            />
             <button
-              onClick={uploadDocument}
-              disabled={loading || !file}
-              className="px-8 py-3 bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-600 hover:to-teal-600 disabled:from-gray-600 disabled:to-gray-700 text-white font-semibold rounded-xl transition-all shadow-lg hover:shadow-emerald-500/50 disabled:cursor-not-allowed disabled:opacity-50"
+              className="send-btn"
+              onClick={handleSend}
+              disabled={loading || !question.trim()}
             >
-              {loading ? "⏳" : "Upload"}
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <line x1="22" y1="2" x2="11" y2="13"></line>
+                <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+              </svg>
             </button>
           </div>
+          <p className="input-footer">AI can make mistakes. Consider verifying important information.</p>
         </div>
-
-        {/* { Chat Container} */}
-<div className="flex-1 flex flex-col bg-zinc-900">
-          
-          {/* Messages Area - CHANGED: flex-1 to grow */}
-          <div className="flex-1 overflow-y-auto p-6 space-y-4">
-            {messages.length === 0 ? (
-              <div className="flex flex-col items-center justify-center h-full text-center">
-                <div className="w-20 h-20 bg-gradient-to-br from-purple-500 to-pink-500 rounded-full flex items-center justify-center mb-4 animate-bounce">
-                  <span className="text-4xl">💬</span>
-                </div>
-                <p className="text-purple-300/60 text-lg">No messages yet</p>
-                <p className="text-purple-400/40 text-sm mt-2">Upload a document and start chatting!</p>
-              </div>
-            ) : (
-              messages.map((msg, index) => (
-                <div
-                  key={index}
-                  className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}
-                >
-                  <div
-                    className={`max-w-[75%] rounded-2xl p-4 shadow-lg ${
-                      msg.role === "user"
-                        ? "bg-zinc-700 text-gray-100"
-                        : "bg-zinc-800 text-gray-200 border border-zinc-700"
-
-                    }`}
-                  >
-                    <div className="flex items-center gap-2 mb-2">
-                      <span className="text-xl">
-                        {msg.role === "user" ? "👤" : "🤖"}
-                      </span>
-                      <span className="text-xs font-semibold opacity-70">
-                        {msg.role === "user" ? "You" : "AI Assistant"}
-                      </span>
-                    </div>
-                    <p className="text-sm leading-relaxed whitespace-pre-wrap">{msg.text}</p>
-                  </div>
-                </div>
-              ))
-            )}
-            
-            {loading && (
-              <div className="flex justify-start">
-                <div className="bg-white/10 backdrop-blur-sm rounded-2xl p-4 border border-white/10 rounded-bl-sm">
-                  <div className="flex items-center gap-2">
-                    <span className="text-xl">🤖</span>
-                    <div className="flex gap-1">
-                      <div className="w-2 h-2 bg-purple-400 rounded-full animate-bounce"></div>
-                      <div className="w-2 h-2 bg-purple-400 rounded-full animate-bounce" style={{ animationDelay: '0.2s' }}></div>
-                      <div className="w-2 h-2 bg-purple-400 rounded-full animate-bounce" style={{ animationDelay: '0.4s' }}></div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )}
-            
-            <div ref={messagesEndRef} />
-          </div>
-
-          {/* Input Area */}
-          <div className="border-t border-zinc-800 bg-zinc-900 px-6 py-4">
-  <div className="flex gap-3">
-    <input
-      type="text"
-      value={question}
-      onChange={(e) => setQuestion(e.target.value)}
-      onKeyPress={handleKeyPress}
-      placeholder="Ask anything about your document..."
-      disabled={loading}
-      className="flex-1 bg-zinc-800 border border-zinc-700 rounded-lg px-4 py-3 text-gray-100 placeholder-gray-400 focus:outline-none focus:ring-1 focus:ring-gray-500"
-    />
-    <button
-      onClick={sendMessage}
-      disabled={loading || !question.trim()}
-      className="px-6 py-3 bg-zinc-700 hover:bg-zinc-600 text-gray-100 rounded-lg disabled:opacity-50"
-    >
-      Send
-    </button>
-  </div>
-</div>
-
-        </div>
-
-        {/* Footer */}
-        <div className="text-center mt-4 text-purple-300/40 text-xs">
-          Powered by AI • Your conversations are private
-        </div>
-      </div>
+      </main>
     </div>
-  </>
-);
+  );
 }
-export default App;
-
-
-
-
