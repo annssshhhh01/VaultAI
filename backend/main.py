@@ -105,56 +105,116 @@ model = whisper.load_model("base")  # load once (important)
 
 @app.post("/upload/media")
 async def upload_media(file: UploadFile = File(...)):
-
+    print(f"[DEBUG] Received media file: {file.filename}")
+    
+    # 1. Validation
+    ext = file.filename.split(".")[-1].lower()
+    valid_audio = ["mp3", "wav", "m4a"]
+    valid_video = ["mp4", "mov", "mkv"]
+    
+    if ext not in valid_audio and ext not in valid_video:
+        print(f"[DEBUG] Unsupported file type: {ext}")
+        raise HTTPException(status_code=400, detail="Unsupported file type. Supported types: mp3, wav, m4a, mp4, mov, mkv.")
+        
+    print(f"[DEBUG] File type detected as: {ext}")
     file_path = f"uploads/{file.filename}"
 
-    with open(file_path, "wb") as f:
-        f.write(await file.read())
+    try:
+        with open(file_path, "wb") as f:
+            f.write(await file.read())
+    except Exception as e:
+        print(f"[ERROR] Failed to save file: {e}")
+        raise HTTPException(status_code=500, detail="Failed to save uploaded file")
 
-    ext = file.filename.split(".")[-1].lower()
+    audio_path = file_path
 
-    if ext in ["mp3", "wav", "m4a"]:
-        audio_path = file_path
-
-    elif ext in ["mp4", "mov", "mkv"]:
+    # 2. FFmpeg Extraction
+    if ext in valid_video:
         audio_path = file_path + ".mp3"
+        print(f"[DEBUG] Starting FFmpeg conversion for video file: {file_path}")
+        
+        try:
+            process = subprocess.run([
+                "ffmpeg",
+                "-y",
+                "-i", file_path,
+                "-q:a", "0",
+                "-map", "a",
+                audio_path
+            ], capture_output=True, text=True, check=True)
+            print("[DEBUG] FFmpeg conversion successful.")
+        except subprocess.CalledProcessError as e:
+            print("[ERROR] FFmpeg conversion failed.")
+            print(f"Stdout: {e.stdout}")
+            print(f"Stderr: {e.stderr}")
+            raise HTTPException(status_code=500, detail="FFmpeg conversion failed. Check server logs.")
+            
+        if not os.path.exists(audio_path):
+            print("[ERROR] FFmpeg completed but output file is missing.")
+            raise HTTPException(status_code=500, detail="Audio file was not created by FFmpeg.")
 
-        subprocess.run([
-            "ffmpeg",
-            "-y",
-            "-i", file_path,
-            "-q:a", "0",
-            "-map", "a",
-            audio_path
-        ])
+    # 3. Whisper Transcription
+    print(f"[DEBUG] Starting Whisper transcription on: {audio_path}")
+    try:
+        result = model.transcribe(audio_path)
+        segments = result.get("segments", [])
+        print(f"[DEBUG] Transcription successful. Found {len(segments)} segments.")
+    except Exception as e:
+        print(f"[ERROR] Whisper transcription failed: {e}")
+        raise HTTPException(status_code=500, detail="Whisper transcription failed.")
+        
+    if not segments:
+        raise HTTPException(status_code=400, detail="No speech detected in the media.")
 
-    else:
-        return {"error": "Unsupported file type"}
-
-    # 🎤 Whisper (uses global model)
-    result = model.transcribe(audio_path)
-    segments = result["segments"]
-
+    # 4. Ingestion
     docs = []
-    for s in segments:
-        cursor.execute(
-        "INSERT INTO documents (text, timestamp, source, type) VALUES (%s, %s, %s, %s)",
-        (s["text"], s["start"], file.filename, "audio")
-    )
-        docs.append(
-            Document(
-                page_content=s["text"],
-                metadata={
-                    "timestamp": s["start"],
-                    "source": file.filename
-                }
-            )
-        )
-    conn.commit()
+    successful_segments = 0
+    sample_timestamps = []
     
+    for s in segments:
+        text = s.get("text", "").strip()
+        if not text:
+            continue
+            
+        start_time = s.get("start", 0.0)
+        
+        try:
+            cursor.execute(
+                "INSERT INTO documents (text, timestamp, source, type) VALUES (%s, %s, %s, %s)",
+                (text, start_time, file.filename, "audio")
+            )
+            conn.commit()  # Commit per segment to avoid breaking the entire FAISS ingestion on a single DB error
+            
+            docs.append(
+                Document(
+                    page_content=text,
+                    metadata={
+                        "timestamp": start_time,
+                        "source": file.filename
+                    }
+                )
+            )
+            successful_segments += 1
+            if len(sample_timestamps) < 3:
+                sample_timestamps.append(start_time)
+        except Exception as e:
+            print(f"[WARNING] Database insert failed for a segment: {e}")
+            conn.rollback() # Rollback the failed transaction so subsequent inserts work
 
+    if not docs:
+        raise HTTPException(status_code=500, detail="All segments failed during database insertion.")
 
     global vector_store
-    vector_store = ingest_document(docs, is_audio=True)
+    try:
+        vector_store = ingest_document(docs, is_audio=True)
+        print(f"[DEBUG] Successfully ingested {successful_segments} segments into FAISS.")
+    except Exception as e:
+        print(f"[ERROR] FAISS ingestion failed: {e}")
+        raise HTTPException(status_code=500, detail="Failed to index transcription in FAISS.")
 
-    return {"message": "File processed successfully"}
+    # 5. API Response
+    return {
+        "message": "File processed successfully",
+        "segments_processed": successful_segments,
+        "sample_timestamps": sample_timestamps
+    }
